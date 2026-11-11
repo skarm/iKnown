@@ -15,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_ARCHIVE: iKnow-macOS-arm64.zip
+
 jobs:
   check:
     name: Check, test, and build
@@ -47,29 +50,32 @@ jobs:
         run: sh Tests/check.sh
 
       - name: Build iKnow
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          build_settings=(ARCHS=arm64)
+          if [[ "$BUILD_CONFIGURATION" == Release && "${RELEASE_TAG:-}" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)([-+][0-9A-Za-z.+-]+)?$ ]]; then
+            build_settings+=("MARKETING_VERSION=${BASH_REMATCH[1]}")
+          fi
           xcodebuild -project iKnow.xcodeproj -scheme iKnow \
             -configuration "$BUILD_CONFIGURATION" \
             -derivedDataPath "$RUNNER_TEMP/iKnowDerivedData" \
-            -destination 'generic/platform=macOS' \
-            ONLY_ACTIVE_ARCH=NO ARCHS='arm64 x86_64' build
+            -destination 'generic/platform=macOS' "${build_settings[@]}" build
 
       - name: Verify and package Release app
         if: env.BUILD_CONFIGURATION == 'Release'
         run: |
           app="$RUNNER_TEMP/iKnowDerivedData/Build/Products/Release/iKnow.app"
           architectures=$(lipo -archs "$app/Contents/MacOS/iKnow")
-          for architecture in arm64 x86_64; do
-            if [[ " $architectures " != *" $architecture "* ]]; then
-              echo "Missing $architecture slice. Found $architectures." >&2
-              exit 1
-            fi
-          done
+          if [[ "$architectures" != arm64 ]]; then
+            echo "Expected an arm64 binary. Found $architectures." >&2
+            exit 1
+          fi
           codesign --verify --deep --strict "$app"
           mkdir -p "$RUNNER_TEMP/release-assets"
           cd "$RUNNER_TEMP/release-assets" || exit 1
-          ditto -c -k --sequesterRsrc --keepParent "$app" iKnow-macOS-universal.zip
-          shasum -a 256 iKnow-macOS-universal.zip > SHA256SUMS
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RELEASE_ARCHIVE"
+          shasum -a 256 "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE.sha256"
 
       - name: Upload Release assets
         if: env.BUILD_CONFIGURATION == 'Release'
@@ -105,8 +111,8 @@ jobs:
       - name: Verify checksum
         working-directory: release-assets
         run: |
-          test -s iKnow-macOS-universal.zip
-          sha256sum --check --strict SHA256SUMS
+          test -s "$RELEASE_ARCHIVE"
+          sha256sum --check --strict "$RELEASE_ARCHIVE.sha256"
 
       - name: Attach verified files to the release
         working-directory: release-assets
@@ -124,7 +130,7 @@ jobs:
           }
 
           verify_tag
-          assets=(iKnow-macOS-universal.zip SHA256SUMS)
+          assets=("$RELEASE_ARCHIVE" "$RELEASE_ARCHIVE.sha256")
           state="$RUNNER_TEMP/release.json"
           if gh release view --json isDraft,assets -- "$RELEASE_TAG" > "$state"; then
             existing=$(mktemp -d)

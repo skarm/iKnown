@@ -113,6 +113,7 @@
             isa = XCBuildConfiguration;
             name = Debug;
             buildSettings = {
+                ARCHS = arm64;
                 ASSETCATALOG_COMPILER_APPICON_NAME = iKnowGraph;
                 CODE_SIGN_STYLE = Manual;
                 CODE_SIGN_IDENTITY = "-";
@@ -120,7 +121,7 @@
                 ENABLE_HARDENED_RUNTIME = YES;
                 GENERATE_INFOPLIST_FILE = YES;
                 INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-                MARKETING_VERSION = 0.1.0;
+                MARKETING_VERSION = 1.0.0;
                 CURRENT_PROJECT_VERSION = 3;
                 PRODUCT_BUNDLE_IDENTIFIER = dev.skarm.iKnow;
                 PRODUCT_NAME = "$(TARGET_NAME)";
@@ -130,6 +131,7 @@
             isa = XCBuildConfiguration;
             name = Release;
             buildSettings = {
+                ARCHS = arm64;
                 ASSETCATALOG_COMPILER_APPICON_NAME = iKnowGraph;
                 CODE_SIGN_STYLE = Manual;
                 CODE_SIGN_IDENTITY = "-";
@@ -137,7 +139,7 @@
                 ENABLE_HARDENED_RUNTIME = YES;
                 GENERATE_INFOPLIST_FILE = YES;
                 INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-                MARKETING_VERSION = 0.1.0;
+                MARKETING_VERSION = 1.0.0;
                 CURRENT_PROJECT_VERSION = 3;
                 PRODUCT_BUNDLE_IDENTIFIER = dev.skarm.iKnow;
                 PRODUCT_NAME = "$(TARGET_NAME)";

@@ -6,7 +6,7 @@ This project is a SwiftUI adaptation of Eighth Rank’s original web app. It ada
 
 ## Build and run
 
-iKnow runs on macOS 26 or later on Apple Silicon and Intel. The build has been verified with Xcode 27.2. The app uses SwiftUI, Swift Charts, and system SQLite, with no third-party dependencies.
+iKnow runs on Apple Silicon Macs with macOS 26 or later. The build has been verified with Xcode 27.2. The app uses SwiftUI, Swift Charts, and system SQLite, with no third-party dependencies.
 
 Open `iKnow.xcodeproj` in Xcode and run the **iKnow** scheme, or build from the project directory in Terminal.
 
@@ -43,6 +43,6 @@ Run the report checks against synthetic in-memory and on-disk SQLite fixtures.
 sh Tests/check.sh
 ```
 
-The [macOS CI workflow](.github/workflows/ci.yml) checks the Xcode project, runs the report tests, and compiles a Debug build on branch pushes and pull requests. Pushing a tag builds a universal Release app and publishes `iKnow-macOS-universal.zip` and `SHA256SUMS` on the tag’s GitHub Release. To build an existing tag, open **Actions → macOS CI → Run workflow**, select the default branch, and enter the tag. The app uses ad hoc signing.
+The [macOS CI workflow](.github/workflows/ci.yml) checks the Xcode project, runs the report tests, and compiles a Debug build on branch pushes and pull requests. Pushing a tag builds a Release app for Apple Silicon and publishes `iKnow-macOS-arm64.zip` and its `.sha256` checksum on the tag’s GitHub Release. Version tags such as `v1.0.0` set the app version in the Release build. To build an existing tag, open **Actions → macOS CI → Run workflow**, select the default branch, and enter the tag. The app uses ad hoc signing.
 
 Licensed under the [Apache License 2.0](LICENSE).
