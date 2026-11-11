@@ -1,0 +1,65 @@
+name: macOS CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check, test, and build
+    if: github.event.deleted != true
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Xcode project
+        run: |
+          xcodebuild -version
+          plutil -lint iKnow.xcodeproj/project.pbxproj
+
+      - name: Run report tests
+        run: sh Tests/check.sh
+
+      - name: Build iKnow
+        env:
+          BUILD_CONFIGURATION: ${{ github.ref_type == 'tag' && 'Release' || 'Debug' }}
+        run: |
+          xcodebuild -project iKnow.xcodeproj -scheme iKnow \
+            -configuration "$BUILD_CONFIGURATION" \
+            -derivedDataPath "$RUNNER_TEMP/iKnowDerivedData" \
+            -destination 'generic/platform=macOS' \
+            ONLY_ACTIVE_ARCH=NO ARCHS='arm64 x86_64' build
+
+      - name: Verify and package Release app
+        if: github.ref_type == 'tag'
+        run: |
+          app="$RUNNER_TEMP/iKnowDerivedData/Build/Products/Release/iKnow.app"
+          architectures=$(lipo -archs "$app/Contents/MacOS/iKnow")
+          for architecture in arm64 x86_64; do
+            if [[ " $architectures " != *" $architecture "* ]]; then
+              echo "Missing $architecture slice. Found $architectures." >&2
+              exit 1
+            fi
+          done
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/iKnow-macOS-universal.zip"
+
+      - name: Upload Release archive
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/iKnow-macOS-universal.zip
+          archive: false
+          if-no-files-found: error
