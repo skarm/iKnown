@@ -5,6 +5,12 @@ on:
     branches: ['**']
     tags: ['**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,14 +21,22 @@ jobs:
     if: github.event.deleted != true
     runs-on: xcode-27
     timeout-minutes: 20
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      BUILD_CONFIGURATION: ${{ (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch') && 'Release' || 'Debug' }}
 
     steps:
       - name: Check out sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
           persist-credentials: false
+
+      - name: Record source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Check Xcode project
         run: |
@@ -33,8 +47,6 @@ jobs:
         run: sh Tests/check.sh
 
       - name: Build iKnow
-        env:
-          BUILD_CONFIGURATION: ${{ github.ref_type == 'tag' && 'Release' || 'Debug' }}
         run: |
           xcodebuild -project iKnow.xcodeproj -scheme iKnow \
             -configuration "$BUILD_CONFIGURATION" \
@@ -43,7 +55,7 @@ jobs:
             ONLY_ACTIVE_ARCH=NO ARCHS='arm64 x86_64' build
 
       - name: Verify and package Release app
-        if: github.ref_type == 'tag'
+        if: env.BUILD_CONFIGURATION == 'Release'
         run: |
           app="$RUNNER_TEMP/iKnowDerivedData/Build/Products/Release/iKnow.app"
           architectures=$(lipo -archs "$app/Contents/MacOS/iKnow")
@@ -54,12 +66,93 @@ jobs:
             fi
           done
           codesign --verify --deep --strict "$app"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/iKnow-macOS-universal.zip"
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          cd "$RUNNER_TEMP/release-assets" || exit 1
+          ditto -c -k --sequesterRsrc --keepParent "$app" iKnow-macOS-universal.zip
+          shasum -a 256 iKnow-macOS-universal.zip > SHA256SUMS
 
-      - name: Upload Release archive
-        if: github.ref_type == 'tag'
+      - name: Upload Release assets
+        if: env.BUILD_CONFIGURATION == 'Release'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: ${{ runner.temp }}/iKnow-macOS-universal.zip
-          archive: false
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets
+          compression-level: 0
           if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release assets
+    needs: check
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-${{ inputs.tag || github.ref_name }}
+      cancel-in-progress: false
+    env:
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      BUILD_SHA: ${{ needs.check.outputs.source-sha }}
+    steps:
+      - name: Download Release assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+
+      - name: Verify checksum
+        working-directory: release-assets
+        run: |
+          test -s iKnow-macOS-universal.zip
+          sha256sum --check --strict SHA256SUMS
+
+      - name: Attach verified files to the release
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verify_tag() {
+            local ref sha
+            ref=$(jq -rn --arg ref "refs/tags/$RELEASE_TAG" '$ref | @uri')
+            sha=$(gh api "repos/$GH_REPO/commits/$ref" --jq '.sha')
+            if [[ "$sha" != "$BUILD_SHA" ]]; then
+              echo "Tag $RELEASE_TAG no longer points to the build commit." >&2
+              return 1
+            fi
+          }
+
+          verify_tag
+          assets=(iKnow-macOS-universal.zip SHA256SUMS)
+          state="$RUNNER_TEMP/release.json"
+          if gh release view --json isDraft,assets -- "$RELEASE_TAG" > "$state"; then
+            existing=$(mktemp -d)
+            trap 'rm -rf "$existing"' EXIT
+            missing=()
+            for asset in "${assets[@]}"; do
+              if jq -e --arg name "$asset" 'any(.assets[]; .name == $name)' "$state" > /dev/null; then
+                gh release download --pattern "$asset" --dir "$existing" -- "$RELEASE_TAG"
+                if ! cmp -s "$asset" "$existing/$asset"; then
+                  echo "Release asset $asset differs from this build. Use a new version tag." >&2
+                  exit 1
+                fi
+              else
+                missing+=("$asset")
+              fi
+            done
+            verify_tag
+            if [[ ${#missing[@]} -gt 0 ]]; then
+              gh release upload -- "$RELEASE_TAG" "${missing[@]}"
+            fi
+            if [[ "$(jq -r '.isDraft' "$state")" != true ]]; then
+              exit 0
+            fi
+          else
+            prerelease=false
+            [[ "${RELEASE_TAG%%+*}" != *-* ]] || prerelease=true
+            gh release create --verify-tag --draft --prerelease="$prerelease" \
+              --generate-notes --title "$RELEASE_TAG" -- "$RELEASE_TAG" "${assets[@]}"
+          fi
+          verify_tag
+          gh release edit --draft=false -- "$RELEASE_TAG"

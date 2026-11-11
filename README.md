@@ -43,6 +43,6 @@ Run the report checks against synthetic in-memory and on-disk SQLite fixtures.
 sh Tests/check.sh
 ```
 
-The [macOS CI workflow](.github/workflows/ci.yml) checks the Xcode project, runs the report tests, and compiles a Debug build on branch pushes and pull requests. Pushing a tag runs the same checks with a Release build and uploads `iKnow-macOS-universal.zip` to the workflow run’s **Artifacts** section. The app uses ad hoc signing.
+The [macOS CI workflow](.github/workflows/ci.yml) checks the Xcode project, runs the report tests, and compiles a Debug build on branch pushes and pull requests. Pushing a tag builds a universal Release app and publishes `iKnow-macOS-universal.zip` and `SHA256SUMS` on the tag’s GitHub Release. To build an existing tag, open **Actions → macOS CI → Run workflow**, select the default branch, and enter the tag. The app uses ad hoc signing.
 
 Licensed under the [Apache License 2.0](LICENSE).
